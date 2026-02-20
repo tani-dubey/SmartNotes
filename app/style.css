@@ -14,11 +14,20 @@ body {
   padding: 10px;
 }
 
-#editor {
+#main-area {
+  display: flex;
+  flex-direction: column;
   flex: 1;
+}
+
+#editor {
   padding: 10px;
   font-family: monospace;
   font-size: 14px;
+  flex: 1;
+  border: none;
+  outline: none;
+  resize: none;
 }
 
 #save-note {

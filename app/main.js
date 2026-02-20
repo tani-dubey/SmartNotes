@@ -8,17 +8,17 @@ const notesList = document.getElementById("notes-list");
 const newNoteBtn = document.getElementById("new-note");
 const saveBtn = document.getElementById("save-note");
 
-let currentNote = null;   //filename
+let currentNote = null;
 let isDraft = false;
 let isDirty = false;
-let count = 0;
 
 // Ensure notes directory exists
 if (!fs.existsSync(notesDir)) {
   fs.mkdirSync(notesDir);
 }
 
-//UI helpers
+// -------------------- UI --------------------
+
 function updateSaveButton() {
   if (isDirty) {
     saveBtn.innerText = "💾 Save";
@@ -28,10 +28,11 @@ function updateSaveButton() {
     saveBtn.classList.remove("unsaved");
   }
 }
-//check if file is empty
+
 function isEditorEmpty() {
   return editor.value.trim().length === 0;
 }
+
 function getNextUntitled(prefix) {
   let count = 1;
   let name;
@@ -44,59 +45,73 @@ function getNextUntitled(prefix) {
   return name;
 }
 
-
-//dynamic title
 function titleToFilename(title) {
-  return title
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .trim()
-    .replace(/\s+/g, "-")
-    .slice(0, 50) || "untitled";
+  return (
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .slice(0, 50) || "untitled"
+  );
 }
+
 function getTitleFromEditor() {
-  const firstLine = editor.value.split("\n")[0];
-  return firstLine.trim();
+  return editor.value.split("\n")[0].trim();
 }
 
-//Editor change tracking
+// -------------------- AUTO SAVE --------------------
+
+function autoSaveIfDirty() {
+  if (!currentNote || !isDirty) return;
+
+  const filePath = path.join(notesDir, currentNote);
+  fs.writeFileSync(filePath, editor.value);
+
+  isDirty = false;
+  updateSaveButton();
+}
+
+// -------------------- EDITOR TRACKING --------------------
+
 editor.addEventListener("input", () => {
-  if (!currentNote) {
-    // const safeName = titleToFilename( getTitleFromEditor());
-    const name = `draft-${Date.now()}.md`;
-    const filePath = path.join(notesDir, name);
-
-    fs.writeFileSync(filePath, "");
-
-    currentNote = name;
-    isDraft = true;
-  }
-
+  if (!currentNote) return;
   isDirty = true;
   updateSaveButton();
 });
 
+// -------------------- LOAD NOTES LIST --------------------
 
-
-//Load notes list
 function loadNotes() {
   notesList.innerHTML = "";
 
-  const files = fs.readdirSync(notesDir);
+  const files = fs
+    .readdirSync(notesDir)
+    .filter(f => f.endsWith(".md"))
+    .sort();
 
   files.forEach(file => {
     const li = document.createElement("li");
     li.textContent = file;
-    li.onclick = () => loadNote(file);
+
+    li.addEventListener("click", () => {
+      autoSaveIfDirty();
+      loadNote(file);
+    });
+
     notesList.appendChild(li);
   });
 }
 
-//Load a note (EXISTING FILE ONLY)
+// -------------------- LOAD NOTE --------------------
+
 function loadNote(filename) {
-  filename = path.basename(filename); // safety
+  filename = path.basename(filename);
 
   const filePath = path.join(notesDir, filename);
+
+  if (!fs.existsSync(filePath)) return;
+
   editor.value = fs.readFileSync(filePath, "utf-8");
 
   currentNote = filename;
@@ -104,15 +119,16 @@ function loadNote(filename) {
   isDirty = false;
 
   updateSaveButton();
+
+  editor.readOnly = false;
+  editor.disabled = false;
+  editor.focus();
 }
 
-// New note (creates a draft)
+// -------------------- NEW NOTE --------------------
+
 newNoteBtn.onclick = () => {
-  // save current draft if needed
-  if (currentNote && isDraft && isDirty) {
-    const oldPath = path.join(notesDir, currentNote);
-    fs.writeFileSync(oldPath, editor.value);
-  }
+  autoSaveIfDirty();
 
   const name = getNextUntitled("draft-untitled");
   const filePath = path.join(notesDir, name);
@@ -121,51 +137,67 @@ newNoteBtn.onclick = () => {
 
   currentNote = name;
   isDraft = true;
+
   editor.value = "";
+  editor.readOnly = false;
+  editor.disabled = false;
+  editor.focus();
 
   isDirty = false;
   updateSaveButton();
   loadNotes();
 };
 
+// -------------------- SAVE BUTTON --------------------
 
-//Save button
 saveBtn.onclick = () => {
-  if (!currentNote || !isDirty) return;
+  if (!currentNote) return;
 
   let filePath = path.join(notesDir, currentNote);
+  let renamed = false;
 
   if (currentNote.startsWith("draft-")) {
     let finalName;
 
     if (isEditorEmpty()) {
-      // empty content → untitled
       finalName = getNextUntitled("untitled");
     } else {
-      // non-empty → title-based name
       const title = getTitleFromEditor();
       const safeName = titleToFilename(title);
-      finalName = `${safeName}.md`;
+
+      let candidate = `${safeName}.md`;
+      let n = 1;
+
+      while (
+        fs.existsSync(path.join(notesDir, candidate)) &&
+        candidate !== currentNote
+      ) {
+        candidate = `${safeName}-${n++}.md`;
+      }
+
+      finalName = candidate;
     }
 
     const finalPath = path.join(notesDir, finalName);
 
     fs.renameSync(filePath, finalPath);
+
     currentNote = finalName;
     filePath = finalPath;
     isDraft = false;
-
-    loadNotes();
+    renamed = true;
   }
 
   fs.writeFileSync(filePath, editor.value);
 
   isDirty = false;
   updateSaveButton();
+  editor.focus();
+
+  if (renamed) loadNotes();
 };
 
+// -------------------- INIT --------------------
 
-
-//Initial load
 loadNotes();
 updateSaveButton();
