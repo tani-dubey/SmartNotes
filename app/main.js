@@ -13,8 +13,13 @@ let isDraft = false;
 let isDirty = false;
 
 // Ensure notes directory exists
-if (!fs.existsSync(notesDir)) {
-  fs.mkdirSync(notesDir);
+try{
+  if (!fs.existsSync(notesDir)) {
+    fs.mkdirSync(notesDir);
+}
+} catch (err) {
+  console.error("Failed to create notes directory:", err);
+  alert("Failed to initialize notes directory.");
 }
 
 // -------------------- UI --------------------
@@ -28,7 +33,12 @@ function updateSaveButton() {
     saveBtn.classList.remove("unsaved");
   }
 }
+function showError(message, err) {
+  console.error(message, err);
+  alert(message);
+}
 
+// helpers
 function isEditorEmpty() {
   return editor.value.trim().length === 0;
 }
@@ -60,35 +70,44 @@ function getTitleFromEditor() {
   return editor.value.split("\n")[0].trim();
 }
 
-// -------------------- AUTO SAVE --------------------
-
+// AUTO SAVE
 function autoSaveIfDirty() {
   if (!currentNote || !isDirty) return;
 
-  const filePath = path.join(notesDir, currentNote);
-  fs.writeFileSync(filePath, editor.value);
-
-  isDirty = false;
-  updateSaveButton();
+  try {
+    fs.writeFileSync(
+      path.join(notesDir, currentNote),
+      editor.value
+    );
+    isDirty = false;
+    updateSaveButton();
+  } catch (err) {
+    showError("Failed to auto-save note.", err);
+  }
 }
 
-// -------------------- EDITOR TRACKING --------------------
-
+// EDITOR TRACKING
 editor.addEventListener("input", () => {
   if (!currentNote) return;
   isDirty = true;
   updateSaveButton();
 });
 
-// -------------------- LOAD NOTES LIST --------------------
-
+// LOAD NOTES LIST
 function loadNotes() {
   notesList.innerHTML = "";
 
-  const files = fs
-    .readdirSync(notesDir)
-    .filter(f => f.endsWith(".md"))
-    .sort();
+  let files = [];
+
+  try {
+    files = fs
+      .readdirSync(notesDir)
+      .filter(f => f.endsWith(".md"))
+      .sort();
+  } catch (err) {
+    showError("Failed to load notes list.", err);
+    return;
+  }
 
   files.forEach(file => {
     const li = document.createElement("li");
@@ -103,16 +122,19 @@ function loadNotes() {
   });
 }
 
-// -------------------- LOAD NOTE --------------------
-
+// LOAD NOTE
 function loadNote(filename) {
   filename = path.basename(filename);
 
   const filePath = path.join(notesDir, filename);
 
-  if (!fs.existsSync(filePath)) return;
-
-  editor.value = fs.readFileSync(filePath, "utf-8");
+  try {
+    const content = fs.readFileSync(filePath, "utf-8");
+    editor.value = content;
+  } catch (err) {
+    showError("Failed to load note.", err);
+    return;
+  }
 
   currentNote = filename;
   isDraft = filename.startsWith("draft-");
@@ -125,15 +147,19 @@ function loadNote(filename) {
   editor.focus();
 }
 
-// -------------------- NEW NOTE --------------------
-
+// NEW NOTE
 newNoteBtn.onclick = () => {
   autoSaveIfDirty();
 
   const name = getNextUntitled("draft-untitled");
   const filePath = path.join(notesDir, name);
 
-  fs.writeFileSync(filePath, "");
+  try {
+    fs.writeFileSync(filePath, "");
+  } catch (err) {
+    showError("Failed to create new note.", err);
+    return;
+  }
 
   currentNote = name;
   isDraft = true;
@@ -180,15 +206,24 @@ saveBtn.onclick = () => {
 
     const finalPath = path.join(notesDir, finalName);
 
-    fs.renameSync(filePath, finalPath);
-
-    currentNote = finalName;
-    filePath = finalPath;
-    isDraft = false;
-    renamed = true;
+    try {
+      fs.renameSync(filePath, finalPath);
+      currentNote = finalName;
+      filePath = finalPath;
+      isDraft = false;
+      renamed = true;
+    } catch (err) {
+      showError("Failed to rename draft note.", err);
+      return;
+    }
   }
 
-  fs.writeFileSync(filePath, editor.value);
+  try {
+    fs.writeFileSync(filePath, editor.value);
+  } catch (err) {
+    showError("Failed to save note.", err);
+    return;
+  }
 
   isDirty = false;
   updateSaveButton();
